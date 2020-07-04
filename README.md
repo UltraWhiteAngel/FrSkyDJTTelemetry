@@ -3,7 +3,7 @@ Decoder for "D" receiver telemetry emitted typically from an early FrSky DJT Tx 
 
 Typical components:
 
-https://www.banggood.com/Geekcreit-ATmega328P-Nano-V3-Controller-Board-Improved-Version-Module-Development-Board-p-940937.html?rmmds=search&cur_warehouse=USA
+https://www.banggood.com/Geekcreit-ATmega328P-Nano-V3-Controller-Board-Improved-Version-Module-Development-Board-p-940937.html?rmmds=search&cur_warehouse=CN
 
 https://www.banggood.com/search/oled-display-i2c.html
 
