@@ -10,6 +10,12 @@
 
 SSD1X06 oled;
 
+#define USE_COMPUTED_MAH
+
+#define ScrollPin 2
+#define BeeperPin 3
+#define ZeroPin 4
+
 enum {
   // Data IDs  (BP = before decimal point; AP = after decimal point)
 
@@ -74,14 +80,268 @@ enum {
                   //opentx vario
 };
 
+#define MAX_SCROLL 1
 enum {WaitRxSentinel, WaitRxID, WaitRxBody};
 
 bool BeeperOn = false;
+
+uint8_t Scroll = 0;
 uint8_t rssi;
 uint8_t a1;
 uint8_t a2;
 
+int16_t IntervalmS;
+int32_t LastFuelUpdatemS = 0;
+int16_t mAHUsed = 0;
+int16_t Current;
+
+uint8_t NoOfSats, HDOP;
+
+uint8_t FrSkyPacketID;
+uint8_t FrSkyUserchLow, ch;
+uint8_t chPacket[4];
+
 bool GPSValid, OriginValid, Armed;
+
+int16_t computemAHUsed(int16_t Current) {
+  if (LastFuelUpdatemS == 0)
+    LastFuelUpdatemS = millis();
+  IntervalmS = millis() - LastFuelUpdatemS;
+  LastFuelUpdatemS = millis();
+  mAHUsed += (float)Current * 0.1 * IntervalmS * (1.0 / 3600.0);
+
+  return mAHUsed;
+}
+
+void updateDisplay(uint8_t Scroll) {
+  uint16_t high, low;
+  int16_t i, Temp, Temp1, Temp2;
+
+  switch (Scroll) {
+    case 0:
+
+      switch ( FrSkyPacketID ) {
+        case ID_COURSE_BP:
+        case ID_ALT_BP:
+        case ID_GPS_ALT_BP:
+        case ID_GPS_SPEED_BP:
+        case ID_VOLTS_BP:
+        case ID_GPS_LAT_BP:
+        case ID_GPS_LONG_BP:
+          chPacket[0] = FrSkyUserchLow;
+          chPacket[1] = ch;
+          break;
+
+        case ID_GPS_LAT_AP:
+        case ID_GPS_LONG_AP:
+          chPacket[2] = FrSkyUserchLow;
+          chPacket[3] = ch;
+          break;
+
+        //________________________________
+
+        case ID_BEEPER:
+          BeeperOn = (((uint16_t)ch << 8 | FrSkyUserchLow) & 1 != 0) ;
+          if (BeeperOn)
+            oled.displayChar6x8(1, 14, '*');
+          else
+            oled.displayChar6x8(1, 14, ' ');
+          break;
+        case ID_TEMP1: // flight mode
+          oled.displayString6x8(1, 15, "    ", false);
+          Temp = (uint16_t)ch << 8 | FrSkyUserchLow;
+          if (((Temp / 10) % 10) >= 4)
+            oled.displayString6x8(1, 15, "MAN ", false);
+
+          Temp2 = (Temp / 100) % 10;
+          if (Temp2 == 2)
+            oled.displayString6x8(1, 15, "AH  ", false);
+          else if ((Temp2 == 4) || (Temp2 == 6))
+            oled.displayString6x8(1, 15, "HOLD", false);
+
+          Temp2 = (Temp / 1000) % 10;
+          if (Temp2 == 1)
+            oled.displayString6x8(1, 15, "RTH ", false);
+          else if (Temp2 == 2)
+            oled.displayString6x8(1, 15, "NAV ", false);
+
+          break;
+        case ID_TEMP2: // gps flags
+          Temp = (uint16_t)ch << 8 | FrSkyUserchLow;
+          GPSValid = ((Temp / 1000) % 10) >= 1;
+          OriginValid = ((Temp / 1000) % 10) >= 3;
+          Armed =  ((Temp / 1000) % 10) >= 7;
+          if (GPSValid)// && OriginValid)
+            oled.displayString6x8(5, 0, "gpsOK", false);
+          else
+            oled.displayString6x8(5, 0, "     ", false);
+          oled.displayString6x8(5, 6, "hdop  ", false);
+          oled.displayInt32(5, 11, (Temp / 1000) % 10);
+          NoOfSats = Temp % 100;
+          oled.displayString6x8(5, 13, "sats   ", false);
+          oled.displayInt32(5, 18, NoOfSats);
+          break;
+        case ID_GPS_ALT_AP:
+          oled.displayString6x8(6, 0, "    ", false);
+          oled.displayReal32(6, 0, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'm');
+          break;
+        case ID_COURSE_AP:
+          oled.displayString6x8(6, 8, "    ", false);
+          oled.displayReal32(6, 8, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'd');
+          break;
+        case ID_COMPASS :
+          oled.displayString6x8(3, 15, "     ", false);
+          oled.displayReal32(3, 15, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'd');
+          break;
+        case ID_VERT_SPEED:
+          oled.displayString6x8(0, 8, "      ", false);
+          oled.displayReal32(0, 8, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 0);
+          break;
+        case ID_RPM:
+          //Temp = ((int16_t)ch << 8) | FrSkyUserchLow;
+          //oled.displayString6x8(0, 15, "     ", false);
+          // oled.displayInt32(0, 15, Temp * 5);
+          break;
+        case ID_FUEL:
+          // oled.displayString6x8(1, 15, "    ", false);
+          // oled.displayReal32(1, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 0, '%');
+          break;
+        case ID_VOLTS_AP:
+          break;
+        case ID_VOLTS:
+          break;
+        case ID_VFAS:
+          oled.displayString6x8(1, 0, "    ", false);
+          oled.displayReal32(1, 0, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'v');
+          // ? estimate #cells and do beeper alarm
+          break;
+        case ID_CURRENT:
+          oled.displayString6x8(1, 8, "     ", false);
+          oled.displayReal32(1, 8, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'a');
+          break;
+        case ID_MAH:
+          //  ??
+          break;
+        case ID_PITCH:
+          oled.displayString6x8(3, 0, "p    ", false);
+          oled.displayInt32(3, 1, ((int16_t)ch << 8) | FrSkyUserchLow);
+          break;
+        case ID_ROLL:
+          oled.displayString6x8(3, 8, "r    ", false);
+          oled.displayInt32(3, 9, ((int16_t)ch << 8) | FrSkyUserchLow);
+          break;
+        case ID_ALT_AP:
+          oled.displayString6x8(0, 0, "   ", false);
+          //writeOled(0, 0, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
+          oled.displayReal32(0, 0, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'm');
+          break;
+        case ID_GPS_SPEED_AP:
+          oled.displayString6x8(6, 15, "    ", false);
+          writeOled(6, 15, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
+          break;
+        case ID_N_S:
+          i = (uint16_t)chPacket[1];
+          i = (i << 8) | chPacket[0]; // degrees * 100 + minutes
+          high = (i / 100) >> 8;
+          low = (i / 100) & 0x00ff;
+          writeOled(7, 0, low, high, chPacket[2], chPacket[3], 10000, 4);
+          oled.displayChar6x8(7, 8, FrSkyUserchLow);
+          break;
+        case ID_E_W:
+          i = (uint16_t)chPacket[1];
+          i = (i << 8) | chPacket[0]; // degrees * 100 + minutes
+          high = (i / 100) >> 8;
+          low = (i / 100) & 0x00ff;
+          writeOled(7, 11, low, high, chPacket[2], chPacket[3], 10000, 4);
+          oled.displayChar6x8(7, 19, FrSkyUserchLow);
+          break;
+        case ID_DATE_MONTH:
+          break;
+        case ID_YEAR:
+          break;
+        case ID_HOUR_MINUTE:
+          break;
+        case ID_SECOND:
+          break;
+        case ID_WHERE_BEAR: // bearing (deg) to aircraft
+          oled.displayString6x8(4, 0, "     ", false);
+          oled.displayReal32(4, 0, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'd');
+          break;
+        case ID_WHERE_DIST:
+          oled.displayString6x8(4, 6, "     ", false);
+          oled.displayReal32(4, 6, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'm');
+          break;
+        case ID_WHERE_HINT: // which to turn to come home intended for voice guidance
+          oled.displayString6x8(4, 12, "hint      ", false);
+          oled.displayReal32(4, 16, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'd');
+          break;
+        case ID_WHERE_ELEV: // elevation (deg) of the aircraft above the horizon
+          //oled.displayString6x8(4, 15, "     ", false);
+          //oled.displayReal32(4, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'd');
+          break;
+
+        default:
+          break;
+      }
+      break;
+    case 1: // bare bones Fixed Wing
+      switch ( FrSkyPacketID ) {
+        case ID_ALT_BP:
+        case ID_VOLTS_BP:
+          chPacket[0] = FrSkyUserchLow;
+          chPacket[1] = ch;
+          break;
+
+        //________________________________
+
+        case ID_VERT_SPEED:
+          oled.displayString6x8(0, 8, "      ", false);
+          oled.displayReal32(0, 8, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 0);
+          break;
+        case ID_ALT_AP:
+          oled.displayString6x8(0, 0, "   ", false);
+          //writeOled(0, 0, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
+          oled.displayReal32(0, 0, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'm');
+          break;
+        case ID_VOLTS_AP:
+          break;
+        case ID_VFAS:
+          oled.displayString6x8(1, 0, "    ", false);
+          oled.displayReal32(1, 0, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'v');
+          break;
+        case ID_CURRENT:
+          oled.displayString6x8(1, 8, "     ", false);
+          Current = ((int16_t)ch << 8) | FrSkyUserchLow;
+          oled.displayReal32(1, 8, Current, 1, 'a');
+#if defined(USE_COMPUTED_MAH)
+          oled.displayString6x8(1, 12, "mAH     ", false);
+          oled.displayReal32(1, 16,  computemAHUsed(Current), 0, ' ');
+#endif
+          break;
+        case ID_FUEL:
+          // oled.displayString6x8(1, 15, "    ", false);
+          // oled.displayReal32(1, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 0, ' ');
+          break;
+        case ID_MAH:
+#if !defined(USE_COMPUTED_MAH)
+          oled.displayString6x8(1, 12, "mAH     ", false);
+          oled.displayReal32(1, 16, ((int16_t)ch << 8) | FrSkyUserchLow, 0, '%');
+#endif
+          break;
+        case ID_TEMP1: // flight mode
+          oled.displayString6x8(7, 0, "T1     ", false);
+          oled.displayReal32(7, 3, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'C');
+          break;
+        case ID_TEMP2: // gps flags
+          oled.displayString6x8(7, 12, "T2     ", false);
+          oled.displayReal32(7, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'C');
+          break;
+        default:
+          break;
+      }
+      break;
+  }
+}
 
 void writeOled(uint8_t row, uint8_t col, uint8_t a, uint8_t b, uint8_t c, uint8_t d, uint16_t frac, uint8_t dp) {
   oled.displayString6x8(row, col, "         ", false);
@@ -89,16 +349,10 @@ void writeOled(uint8_t row, uint8_t col, uint8_t a, uint8_t b, uint8_t c, uint8_
 }
 
 void handlechByte(uint16_t ch) {
-  static uint8_t chPacket[4];
-  static uint8_t FrSkyPacketRxState = 0;
-  static uint8_t FrSkyUserchLow;
-  static uint8_t FrSkyPacketID;
+
+  static uint8_t FrSkyPacketRxState = WaitRxSentinel;
   static bool FrSkyUserchStuffing;
   static bool FrSkyUserchLowFlag; // flag for low byte of ch, which is the first of the following two
-  int16_t i, Temp, Temp2;
-  uint16_t high, low;
-  uint8_t NoOfSats, HDOP;
-
 
   switch (FrSkyPacketRxState) {
     case WaitRxSentinel: // idle
@@ -135,173 +389,8 @@ void handlechByte(uint16_t ch) {
         FrSkyUserchLow = ch; // remember low byte
         FrSkyUserchLowFlag = false; // expect high byte next
       }
-      else { // expecting high byte of ch
-
-
-        switch ( FrSkyPacketID ) {
-          case ID_COURSE_BP:
-          case ID_ALT_BP:
-          case ID_GPS_ALT_BP:
-          case ID_GPS_SPEED_BP:
-          case ID_VOLTS_BP:
-          case ID_GPS_LAT_BP:
-          case ID_GPS_LONG_BP:
-            chPacket[0] = FrSkyUserchLow;
-            chPacket[1] = ch;
-            break;
-
-          case ID_GPS_LAT_AP:
-          case ID_GPS_LONG_AP:
-            chPacket[2] = FrSkyUserchLow;
-            chPacket[3] = ch;
-            break;
-
-          //________________________________
-
-
-          case ID_BEEPER:
-            BeeperOn = (((uint16_t)ch << 8 | FrSkyUserchLow) & 1 != 0) ;
-            if (BeeperOn)
-              oled.displayChar6x8(1, 14, '*');
-            else
-              oled.displayChar6x8(1, 14, ' ');
-            break;
-          case ID_TEMP1: // flight mode
-            oled.displayString6x8(1, 15, "    ", false);
-            Temp = (uint16_t)ch << 8 | FrSkyUserchLow;
-            if (((Temp / 10) % 10) >= 4)
-              oled.displayString6x8(1, 15, "MAN ", false);
-
-            Temp2 = (Temp / 100) % 10;
-            if (Temp2 == 2)
-              oled.displayString6x8(1, 15, "AH  ", false);
-            else if ((Temp2 == 4) || (Temp2 == 6))
-              oled.displayString6x8(1, 15, "HOLD", false);
-
-            Temp2 = (Temp / 1000) % 10;
-            if (Temp2 == 1)
-              oled.displayString6x8(1, 15, "RTH ", false);
-            else if (Temp2 == 2)
-              oled.displayString6x8(1, 15, "NAV ", false);
-
-            break;
-          case ID_TEMP2: // gps flags
-            Temp = (uint16_t)ch << 8 | FrSkyUserchLow;
-            GPSValid = ((Temp / 1000) % 10) >= 1;
-            OriginValid = ((Temp / 1000) % 10) >= 3;
-            Armed =  ((Temp / 1000) % 10) >= 7;
-            if (GPSValid)// && OriginValid)
-              oled.displayString6x8(5, 0, "gpsOK", false);
-            else
-              oled.displayString6x8(5, 0, "     ", false);
-            oled.displayString6x8(5, 6, "hdop  ", false);
-            oled.displayInt32(5, 11, (Temp / 1000) % 10);
-            NoOfSats = Temp % 100;
-            oled.displayString6x8(5, 13, "sats   ", false);
-            oled.displayInt32(5, 18, NoOfSats);
-            break;
-          case ID_GPS_ALT_AP:
-            oled.displayString6x8(6, 0, "    ", false);
-            oled.displayReal32(6, 0, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'm');
-            break;
-          case ID_COURSE_AP:
-            oled.displayString6x8(6, 8, "    ", false);
-            oled.displayReal32(6, 8, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'd');
-            break;
-          case ID_COMPASS :
-            oled.displayString6x8(3, 15, "     ", false);
-            oled.displayReal32(3, 15, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'd');
-            break;
-          case ID_VERT_SPEED:
-            oled.displayString6x8(0, 8, "      ", false);
-            oled.displayReal32(0, 8, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 0);
-            break;
-          case ID_RPM:
-            //Temp = ((int16_t)ch << 8) | FrSkyUserchLow;
-            //oled.displayString6x8(0, 15, "     ", false);
-            // oled.displayInt32(0, 15, Temp * 5);
-            break;
-          case ID_FUEL:
-            // oled.displayString6x8(1, 15, "    ", false);
-            // oled.displayReal32(1, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 0, '%');
-            break;
-          case ID_VOLTS_AP:
-            break;
-          case ID_VOLTS:
-            break;
-          case ID_VFAS:
-            oled.displayString6x8(1, 0, "    ", false);
-            oled.displayReal32(1, 0, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'v');
-            // ? estimate #cells and do beeper alarm
-            break;
-          case ID_CURRENT:
-            oled.displayString6x8(1, 8, "     ", false);
-            oled.displayReal32(1, 8, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'a');
-            break;
-          case ID_MAH:
-            //  ??
-            break;
-          case ID_PITCH:
-            oled.displayString6x8(3, 0, "p    ", false);
-            oled.displayInt32(3, 1, ((int16_t)ch << 8) | FrSkyUserchLow);
-            break;
-          case ID_ROLL:
-            oled.displayString6x8(3, 8, "r    ", false);
-            oled.displayInt32(3, 9, ((int16_t)ch << 8) | FrSkyUserchLow);
-            break;
-          case ID_ALT_AP:
-            oled.displayString6x8(0, 0, "   ", false);
-            //writeOled(0, 0, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
-            oled.displayReal32(0, 0, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'm');
-            break;
-          case ID_GPS_SPEED_AP:
-            oled.displayString6x8(6, 15, "    ", false);
-            writeOled(6, 15, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
-            break;
-          case ID_N_S:
-            i = (uint16_t)chPacket[1];
-            i = (i << 8) | chPacket[0]; // degrees * 100 + minutes
-            high = (i / 100) >> 8;
-            low = (i / 100) & 0x00ff;
-            writeOled(7, 0, low, high, chPacket[2], chPacket[3], 10000, 4);
-            oled.displayChar6x8(7, 8, FrSkyUserchLow);
-            break;
-          case ID_E_W:
-            i = (uint16_t)chPacket[1];
-            i = (i << 8) | chPacket[0]; // degrees * 100 + minutes
-            high = (i / 100) >> 8;
-            low = (i / 100) & 0x00ff;
-            writeOled(7, 11, low, high, chPacket[2], chPacket[3], 10000, 4);
-            oled.displayChar6x8(7, 19, FrSkyUserchLow);
-            break;
-          case ID_DATE_MONTH:
-            break;
-          case ID_YEAR:
-            break;
-          case ID_HOUR_MINUTE:
-            break;
-          case ID_SECOND:
-            break;
-          case ID_WHERE_BEAR: // bearing (deg) to aircraft
-            oled.displayString6x8(4, 0, "     ", false);
-            oled.displayReal32(4, 0, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'd');
-            break;
-          case ID_WHERE_DIST:
-            oled.displayString6x8(4, 6, "     ", false);
-            oled.displayReal32(4, 6, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'm');
-            break;
-          case ID_WHERE_HINT: // which to turn to come home intended for voice guidance
-            oled.displayString6x8(4, 12, "hint      ", false);
-            oled.displayReal32(4, 16, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'd');
-            break;
-          case ID_WHERE_ELEV: // elevation (deg) of the aircraft above the horizon
-            //oled.displayString6x8(4, 15, "     ", false);
-            //oled.displayReal32(4, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'd');
-            break;
-
-          default:
-            break;
-        }
+      else {
+        updateDisplay(Scroll);
         FrSkyPacketRxState = WaitRxSentinel;
       } // else
       break;
@@ -325,9 +414,8 @@ void handlePacket(uint16_t *packet) {
       rssi = packet[3]; // main (Rx) link quality 100+ is full signal  40 is no signal
       // packet[4] secondary (Tx) link quality.
 
-      oled.displayString6x8(0, 14, "rssi    ", false);
-      oled.displayInt32(0, 19, rssi);
-      BeeperOn = rssi < 45;
+      oled.displayString6x8(0, 13, "rssi    ", false);
+      oled.displayInt32(0, 18, rssi);
       break;
   }
 
@@ -380,7 +468,40 @@ void initDisplay(void) {
 
 }
 
+void checkScroll() {
+  enum {IsHigh, SeenLow, WaitHigh};
+  static int32_t nextUpdatemS = 0;
+  static uint8_t ScrollState = IsHigh;
+
+  if (millis() > nextUpdatemS) {
+    nextUpdatemS = millis() + 100;
+
+    switch (ScrollState) {
+      case IsHigh:
+        if (digitalRead(ScrollPin) == LOW)
+          ScrollState = SeenLow;
+        break;
+      case SeenLow:
+        if (digitalRead(ScrollPin) == LOW) {
+          Scroll++;
+          if (Scroll >= MAX_SCROLL)
+            Scroll = 0;
+          ScrollState = WaitHigh;
+        } else
+          ScrollState = IsHigh;
+        break;
+      case WaitHigh:
+        if (digitalRead(ScrollPin) == HIGH)
+          ScrollState = IsHigh;
+    }
+  }
+
+}
+
 void setup(void) {
+
+  pinMode(BeeperPin, OUTPUT);
+  pinMode(ScrollPin, INPUT_PULLUP);
 
   initDisplay();
 
@@ -395,4 +516,10 @@ void loop(void) {
   if (Serial.available())
     handleRxChar(Serial.read());
 
+  if (BeeperOn || (rssi < 45))
+    digitalWrite(BeeperPin, LOW);
+  else
+    digitalWrite(BeeperPin, HIGH);
+
+  //checkScroll();
 }
