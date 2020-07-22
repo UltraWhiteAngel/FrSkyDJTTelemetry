@@ -80,13 +80,15 @@ enum {
                   //opentx vario
 };
 
-#define MAX_SCROLL 1
+#define MAX_SCROLL 2
 enum {WaitRxSentinel, WaitRxID, WaitRxBody};
 
 bool BeeperOn = false;
+uint32_t BeeperTimeout = 0;
 
 uint8_t Scroll = 0;
 uint8_t rssi;
+bool rssiseen = false;
 uint8_t a1;
 uint8_t a2;
 
@@ -97,6 +99,9 @@ int16_t Current;
 
 uint8_t NoOfSats, HDOP;
 
+int16_t OriginAltitude = 0;
+int16_t Altitude = 0;
+
 uint8_t FrSkyPacketID;
 uint8_t FrSkyUserchLow, ch;
 uint8_t chPacket[4];
@@ -104,6 +109,9 @@ uint8_t chPacket[4];
 bool GPSValid, OriginValid, Armed;
 
 int16_t computemAHUsed(int16_t Current) {
+  if (digitalRead(ZeroPin) == LOW)
+    mAHUsed = 0;
+
   if (LastFuelUpdatemS == 0)
     LastFuelUpdatemS = millis();
   IntervalmS = millis() - LastFuelUpdatemS;
@@ -113,8 +121,8 @@ int16_t computemAHUsed(int16_t Current) {
   return mAHUsed;
 }
 
-void updateDisplay(uint8_t Scroll) {
-  uint16_t high, low;
+void updateDisplay(uint8_t Scroll, uint8_t ch) {
+  uint8_t high, low;
   int16_t i, Temp, Temp1, Temp2;
 
   switch (Scroll) {
@@ -142,9 +150,10 @@ void updateDisplay(uint8_t Scroll) {
 
         case ID_BEEPER:
           BeeperOn = (((uint16_t)ch << 8 | FrSkyUserchLow) & 1 != 0) ;
-          if (BeeperOn)
+          if (BeeperOn) {
             oled.displayChar6x8(1, 14, '*');
-          else
+            BeeperTimeout = millis() + 5000;
+          } else
             oled.displayChar6x8(1, 14, ' ');
           break;
         case ID_TEMP1: // flight mode
@@ -231,9 +240,12 @@ void updateDisplay(uint8_t Scroll) {
           oled.displayInt32(3, 9, ((int16_t)ch << 8) | FrSkyUserchLow);
           break;
         case ID_ALT_AP:
-          oled.displayString6x8(0, 0, "   ", false);
+          oled.displayString6x8(0, 0, "    ", false);
           //writeOled(0, 0, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
-          oled.displayReal32(0, 0, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'm');
+          Altitude = ((int16_t)chPacket[1] << 8) | chPacket[0];
+          if (digitalRead(ZeroPin) == LOW)
+            OriginAltitude = Altitude;
+          oled.displayReal32(0, 0, Altitude - OriginAltitude, 0, 'm');
           break;
         case ID_GPS_SPEED_AP:
           oled.displayString6x8(6, 15, "    ", false);
@@ -299,9 +311,12 @@ void updateDisplay(uint8_t Scroll) {
           oled.displayReal32(0, 8, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 0);
           break;
         case ID_ALT_AP:
-          oled.displayString6x8(0, 0, "   ", false);
+          oled.displayString6x8(0, 0, "    ", false);
           //writeOled(0, 0, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
-          oled.displayReal32(0, 0, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'm');
+          Altitude = ((int16_t)chPacket[1] << 8) | chPacket[0];
+          if (digitalRead(ZeroPin) == LOW)
+            OriginAltitude = Altitude;
+          oled.displayReal32(0, 0, Altitude - OriginAltitude, 0, 'm');
           break;
         case ID_VOLTS_AP:
           break;
@@ -314,8 +329,8 @@ void updateDisplay(uint8_t Scroll) {
           Current = ((int16_t)ch << 8) | FrSkyUserchLow;
           oled.displayReal32(1, 8, Current, 1, 'a');
 #if defined(USE_COMPUTED_MAH)
-          oled.displayString6x8(1, 12, "mAH     ", false);
-          oled.displayReal32(1, 16,  computemAHUsed(Current), 0, ' ');
+          oled.displayString6x8(1, 13, "mAH     ", false);
+          oled.displayReal32(1, 17,  computemAHUsed(Current), 0, ' ');
 #endif
           break;
         case ID_FUEL:
@@ -339,6 +354,9 @@ void updateDisplay(uint8_t Scroll) {
         default:
           break;
       }
+      break;
+    default:
+      oled.displayString6x8(0, 0, F("UNUSED 2"), 0);
       break;
   }
 }
@@ -390,7 +408,7 @@ void handlechByte(uint16_t ch) {
         FrSkyUserchLowFlag = false; // expect high byte next
       }
       else {
-        updateDisplay(Scroll);
+        updateDisplay(Scroll, ch);
         FrSkyPacketRxState = WaitRxSentinel;
       } // else
       break;
@@ -411,6 +429,7 @@ void handlePacket(uint16_t *packet) {
     case 0xFE:
       a1 = packet[1]; // A1:
       a2 = packet[2]; // A2:
+      rssiseen = true;
       rssi = packet[3]; // main (Rx) link quality 100+ is full signal  40 is no signal
       // packet[4] secondary (Tx) link quality.
 
@@ -501,7 +520,11 @@ void checkScroll() {
 void setup(void) {
 
   pinMode(BeeperPin, OUTPUT);
+  rssiseen = false;
+  digitalWrite(BeeperPin, LOW);
+
   pinMode(ScrollPin, INPUT_PULLUP);
+  pinMode(ZeroPin, INPUT_PULLUP);
 
   initDisplay();
 
@@ -512,14 +535,25 @@ void setup(void) {
 }
 
 void loop(void) {
+  uint8_t ch;
 
   if (Serial.available())
     handleRxChar(Serial.read());
 
-  if (BeeperOn || (rssi < 45))
-    digitalWrite(BeeperPin, LOW);
-  else
-    digitalWrite(BeeperPin, HIGH);
+  if (millis() > BeeperTimeout)
+    BeeperOn = false;
 
-  //checkScroll();
+  if (BeeperOn || ((rssi < 45) && rssiseen))
+    digitalWrite(BeeperPin, HIGH);
+  else
+    digitalWrite(BeeperPin, LOW);
+
+  if (digitalRead(ScrollPin) == LOW) {
+    oled.fillDisplay(' ');
+    if (++Scroll > MAX_SCROLL)
+      Scroll = 0;
+    BeeperOn = false;
+    delay(1000);
+  }
+
 }
