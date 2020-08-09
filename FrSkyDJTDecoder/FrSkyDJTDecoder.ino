@@ -6,6 +6,9 @@
 
 // CANNOT KEEP UP #define NO_INVERTER // uncomment for direct connection of DJT using ~100K resistor
 
+
+#define ALARM_RSSI 45
+
 #include "SSD1X06.h"
 
 SSD1X06 oled;
@@ -543,7 +546,7 @@ void loop(void) {
   if (millis() > BeeperTimeout)
     BeeperOn = false;
 
-  if (BeeperOn || ((rssi < 45) && rssiseen))
+  if (BeeperOn || ((rssi < ALARM_RSSI) && rssiseen))
     digitalWrite(BeeperPin, HIGH);
   else
     digitalWrite(BeeperPin, LOW);
