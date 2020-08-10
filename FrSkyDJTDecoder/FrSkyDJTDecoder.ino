@@ -6,13 +6,11 @@
 
 // CANNOT KEEP UP #define NO_INVERTER // uncomment for direct connection of DJT using ~100K resistor
 
-
-#define ALARM_RSSI 45
-
 #include "SSD1X06.h"
 
 SSD1X06 oled;
 
+#define MIN_RSSI 45
 #define USE_COMPUTED_MAH
 
 #define ScrollPin 2
@@ -124,6 +122,10 @@ int16_t computemAHUsed(int16_t Current) {
   return mAHUsed;
 }
 
+inline int16_t make16() {
+  return ((int16_t)ch << 8) | FrSkyUserchLow;
+}
+
 void updateDisplay(uint8_t Scroll, uint8_t ch) {
   uint8_t high, low;
   int16_t i, Temp, Temp1, Temp2;
@@ -152,7 +154,7 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
         //________________________________
 
         case ID_BEEPER:
-          BeeperOn = (((uint16_t)ch << 8 | FrSkyUserchLow) & 1 != 0) ;
+          BeeperOn = (make16() & 1) != 0;
           if (BeeperOn) {
             oled.displayChar6x8(1, 14, '*');
             BeeperTimeout = millis() + 5000;
@@ -203,20 +205,20 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           break;
         case ID_COMPASS :
           oled.displayString6x8(3, 15, "     ", false);
-          oled.displayReal32(3, 15, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'd');
+          oled.displayReal32(3, 15, make16(), 0, 'd');
           break;
         case ID_VERT_SPEED:
           oled.displayString6x8(0, 8, "      ", false);
-          oled.displayReal32(0, 8, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 0);
+          oled.displayReal32(0, 8, make16(), 1, 0);
           break;
         case ID_RPM:
-          //Temp = ((int16_t)ch << 8) | FrSkyUserchLow;
+          //Temp = make16();
           //oled.displayString6x8(0, 15, "     ", false);
           // oled.displayInt32(0, 15, Temp * 5);
           break;
         case ID_FUEL:
           // oled.displayString6x8(1, 15, "    ", false);
-          // oled.displayReal32(1, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 0, '%');
+          // oled.displayReal32(1, 15, make16(), 0, '%');
           break;
         case ID_VOLTS_AP:
           break;
@@ -224,23 +226,23 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           break;
         case ID_VFAS:
           oled.displayString6x8(1, 0, "    ", false);
-          oled.displayReal32(1, 0, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'v');
+          oled.displayReal32(1, 0, make16(), 1, 'v');
           // ? estimate #cells and do beeper alarm
           break;
         case ID_CURRENT:
           oled.displayString6x8(1, 8, "     ", false);
-          oled.displayReal32(1, 8, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'a');
+          oled.displayReal32(1, 8, make16(), 1, 'a');
           break;
         case ID_MAH:
           //  ??
           break;
         case ID_PITCH:
           oled.displayString6x8(3, 0, "p    ", false);
-          oled.displayInt32(3, 1, ((int16_t)ch << 8) | FrSkyUserchLow);
+          oled.displayInt32(3, 1, make16());
           break;
         case ID_ROLL:
           oled.displayString6x8(3, 8, "r    ", false);
-          oled.displayInt32(3, 9, ((int16_t)ch << 8) | FrSkyUserchLow);
+          oled.displayInt32(3, 9, make16());
           break;
         case ID_ALT_AP:
           oled.displayString6x8(0, 0, "    ", false);
@@ -280,19 +282,19 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           break;
         case ID_WHERE_BEAR: // bearing (deg) to aircraft
           oled.displayString6x8(4, 0, "     ", false);
-          oled.displayReal32(4, 0, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'd');
+          oled.displayReal32(4, 0, make16(), 0, 'd');
           break;
         case ID_WHERE_DIST:
           oled.displayString6x8(4, 6, "     ", false);
-          oled.displayReal32(4, 6, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'm');
+          oled.displayReal32(4, 6, make16(), 0, 'm');
           break;
         case ID_WHERE_HINT: // which to turn to come home intended for voice guidance
           oled.displayString6x8(4, 12, "hint      ", false);
-          oled.displayReal32(4, 16, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'd');
+          oled.displayReal32(4, 16, make16(), 0, 'd');
           break;
         case ID_WHERE_ELEV: // elevation (deg) of the aircraft above the horizon
           //oled.displayString6x8(4, 15, "     ", false);
-          //oled.displayReal32(4, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 0, 'd');
+          //oled.displayReal32(4, 15, make16(), 0, 'd');
           break;
 
         default:
@@ -311,7 +313,7 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
 
         case ID_VERT_SPEED:
           oled.displayString6x8(0, 8, "      ", false);
-          oled.displayReal32(0, 8, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 0);
+          oled.displayReal32(0, 8, make16(), 1, 0);
           break;
         case ID_ALT_AP:
           oled.displayString6x8(0, 0, "    ", false);
@@ -325,11 +327,11 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           break;
         case ID_VFAS:
           oled.displayString6x8(1, 0, "    ", false);
-          oled.displayReal32(1, 0, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'v');
+          oled.displayReal32(1, 0, make16(), 1, 'v');
           break;
         case ID_CURRENT:
           oled.displayString6x8(1, 8, "     ", false);
-          Current = ((int16_t)ch << 8) | FrSkyUserchLow;
+          Current = make16();
           oled.displayReal32(1, 8, Current, 1, 'a');
 #if defined(USE_COMPUTED_MAH)
           oled.displayString6x8(1, 13, "mAH     ", false);
@@ -338,21 +340,21 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           break;
         case ID_FUEL:
           // oled.displayString6x8(1, 15, "    ", false);
-          // oled.displayReal32(1, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 0, ' ');
+          // oled.displayReal32(1, 15, make16(), 0, ' ');
           break;
         case ID_MAH:
 #if !defined(USE_COMPUTED_MAH)
           oled.displayString6x8(1, 12, "mAH     ", false);
-          oled.displayReal32(1, 16, ((int16_t)ch << 8) | FrSkyUserchLow, 0, '%');
+          oled.displayReal32(1, 16, make16(), 0, '%');
 #endif
           break;
         case ID_TEMP1: // flight mode
           oled.displayString6x8(7, 0, "T1     ", false);
-          oled.displayReal32(7, 3, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'C');
+          oled.displayReal32(7, 3, make16(), 1, 'C');
           break;
         case ID_TEMP2: // gps flags
           oled.displayString6x8(7, 12, "T2     ", false);
-          oled.displayReal32(7, 15, ((int16_t)ch << 8) | FrSkyUserchLow, 1, 'C');
+          oled.displayReal32(7, 15, make16(), 1, 'C');
           break;
         default:
           break;
@@ -546,7 +548,7 @@ void loop(void) {
   if (millis() > BeeperTimeout)
     BeeperOn = false;
 
-  if (BeeperOn || ((rssi < ALARM_RSSI) && rssiseen))
+  if (BeeperOn || ((rssi < MIN_RSSI) && rssiseen))
     digitalWrite(BeeperPin, HIGH);
   else
     digitalWrite(BeeperPin, LOW);

@@ -15,6 +15,7 @@
 #define SSD1X06_I2C_ADDRESS 0x3C // some modules can be 0x3D - depends on how module's internal SA0 has been wired
 
 #define I2CSPEED 200000L   
+//#define I2CSPEED 400000L   // standard
 //#define I2CSPEED 800000L 
 
 // pixels
