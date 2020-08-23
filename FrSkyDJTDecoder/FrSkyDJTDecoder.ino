@@ -12,6 +12,7 @@ SSD1X06 oled;
 
 #define MIN_RSSI 45
 #define USE_COMPUTED_MAH
+#define USE_GPS_DD
 
 #define ScrollPin 2
 #define BeeperPin 3
@@ -139,6 +140,7 @@ inline int16_t make16(uint8_t h, uint8_t l) {
 void updateDisplay(uint8_t Scroll, uint8_t ch) {
   uint8_t high, low;
   int16_t i, Temp, Temp1, Temp2;
+  int32_t ddd, mmm;
 
   switch (Scroll) {
     case 0:
@@ -172,7 +174,7 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           oled.displayString6x8(6, 8, "    ", false);
           oled.displayReal32(6, 8, ((int16_t)chPacket[1] << 8) | chPacket[0], 0, 'd');
           break;
-         case ID_ALT_AP:
+        case ID_ALT_AP:
           oled.displayString6x8(0, 0, "    ", false);
           //writeOled(0, 0, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
           Altitude = ((int16_t)chPacket[1] << 8) | chPacket[0];
@@ -185,27 +187,50 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           writeOled(6, 15, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
           break;
         case ID_N_S:
-          i = (uint16_t)chPacket[1];
-          i = (i << 8) | chPacket[0]; // degrees * 100 + minutes
+#if defined(USE_GPS_DD)
+
+          i = make16(chPacket[1], chPacket[0]); // degrees * 100 + minutes
+          ddd = i / 100;
+          mmm = (((int32_t)i % 100) * 10000L + make16(chPacket[3], chPacket[3])) / 60;
+          mmm += ddd * 10000;
+          oled.displayReal32(7, 0, mmm, 4, ' ');
+          oled.displayChar6x8(7, 7, FrSkyUserchLow);
+
+#else
+          i = make16(chPacket[1], chPacket[0]); // degrees * 100 + minutes
           high = (i / 100) >> 8;
           low = (i / 100) & 0x00ff;
           writeOled(7, 0, low, high, chPacket[2], chPacket[3], 10000, 4);
-          oled.displayChar6x8(7, 8, FrSkyUserchLow);
+          oled.displayChar6x8(7, 7, FrSkyUserchLow);
+#endif
+
+
           break;
         case ID_E_W:
-          i = (uint16_t)chPacket[1];
-          i = (i << 8) | chPacket[0]; // degrees * 100 + minutes
+#if defined(USE_GPS_DD)
+
+          i = make16(chPacket[1], chPacket[0]); // degrees * 100 + minutes
+          ddd = i / 100;
+          mmm = (((int32_t)i % 100) * 10000L + make16(chPacket[3], chPacket[3])) / 60;
+          mmm += ddd * 10000;
+          oled.displayReal32(7, 11, mmm, 4, ' ');
+          oled.displayChar6x8(7, 19, FrSkyUserchLow);
+
+#else
+          i = make16(chPacket[1], chPacket[0]); // degrees * 100 + minutes
           high = (i / 100) >> 8;
           low = (i / 100) & 0x00ff;
           writeOled(7, 11, low, high, chPacket[2], chPacket[3], 10000, 4);
           oled.displayChar6x8(7, 19, FrSkyUserchLow);
+#endif
+
           break;
 
-          case ID_VOLTS_AP:
+        case ID_VOLTS_AP:
           break;
 
-          // single word data
-          case ID_BEEPER:
+        // single word data
+        case ID_BEEPER:
           BeeperOn = (make16(ch, FrSkyUserchLow) & 1) != 0;
           if (BeeperOn) {
             oled.displayChar6x8(1, 14, '*');
@@ -246,8 +271,8 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           NoOfSats = Temp % 100;
           oled.displayString6x8(5, 13, "sats   ", false);
           oled.displayInt32(5, 18, NoOfSats);
-          break; 
-              
+          break;
+
         case ID_COMPASS :
           oled.displayString6x8(3, 15, "     ", false);
           oled.displayReal32(3, 15, make16(ch, FrSkyUserchLow), 0, 'd');
@@ -287,7 +312,7 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
         case ID_ROLL:
           oled.displayString6x8(3, 8, "r    ", false);
           oled.displayInt32(3, 9, make16(ch, FrSkyUserchLow));
-          break; 
+          break;
         case ID_DATE_MONTH:
           break;
         case ID_YEAR:
