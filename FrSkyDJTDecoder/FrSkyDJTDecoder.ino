@@ -12,7 +12,6 @@ SSD1X06 oled;
 
 #define MIN_RSSI 45
 #define USE_COMPUTED_MAH
-#define USE_GPS_DD
 
 #define ScrollPin 2
 #define BeeperPin 3
@@ -187,43 +186,20 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           writeOled(6, 15, chPacket[0], chPacket[1], FrSkyUserchLow, ch, 10, 1);
           break;
         case ID_N_S:
-#if defined(USE_GPS_DD)
-
           i = make16(chPacket[1], chPacket[0]); // degrees * 100 + minutes
           ddd = i / 100;
           mmm = (((int32_t)i % 100) * 10000L + make16(chPacket[3], chPacket[3])) / 60;
           mmm += ddd * 10000;
           oled.displayReal32(7, 0, mmm, 4, ' ');
           oled.displayChar6x8(7, 7, FrSkyUserchLow);
-
-#else
-          i = make16(chPacket[1], chPacket[0]); // degrees * 100 + minutes
-          high = (i / 100) >> 8;
-          low = (i / 100) & 0x00ff;
-          writeOled(7, 0, low, high, chPacket[2], chPacket[3], 10000, 4);
-          oled.displayChar6x8(7, 7, FrSkyUserchLow);
-#endif
-
-
           break;
         case ID_E_W:
-#if defined(USE_GPS_DD)
-
           i = make16(chPacket[1], chPacket[0]); // degrees * 100 + minutes
           ddd = i / 100;
           mmm = (((int32_t)i % 100) * 10000L + make16(chPacket[3], chPacket[3])) / 60;
           mmm += ddd * 10000;
           oled.displayReal32(7, 11, mmm, 4, ' ');
           oled.displayChar6x8(7, 19, FrSkyUserchLow);
-
-#else
-          i = make16(chPacket[1], chPacket[0]); // degrees * 100 + minutes
-          high = (i / 100) >> 8;
-          low = (i / 100) & 0x00ff;
-          writeOled(7, 11, low, high, chPacket[2], chPacket[3], 10000, 4);
-          oled.displayChar6x8(7, 19, FrSkyUserchLow);
-#endif
-
           break;
 
         case ID_VOLTS_AP:
