@@ -8,6 +8,8 @@
 
 #include "SSD1X06.h"
 
+#define USE_UAVX_DJT
+
 SSD1X06 oled;
 
 #define MIN_RSSI 45
@@ -21,6 +23,62 @@ typedef union {
   int16_t i16;
   uint8_t u8[2];
 } i16u8u;
+
+enum FlightStates {
+  Starting,
+  Warmup,
+  Landing,
+  Landed,
+  Shutdown,
+  InFlight,
+  IREmulateUNUSED,
+  Preflight,
+  Ready,
+  ThrottleOpenCheck,
+  ErectingGyros,
+  MonitorInstruments,
+  InitialisingGPS,
+  UnknownFlightState
+};
+
+char  modeNames[UnknownFlightState + 1][5] = //
+{ "STRT", "WARM", "LNDG", "LAND", "SHUT", "FLY ", "IR  ",//
+  "PRE ", "RDY ", "THR ", "GYRO", "MON ", "GPS ", "    "
+};
+
+enum NavStates {
+  HoldingStation,
+  ReturningHome,
+  AtHome,
+  Descending,
+  Touchdown,
+  Transiting,
+  Loitering,
+  OrbitingPOI,
+  Perching,
+  Takeoff,
+  PIC,
+  AcquiringAltitude,
+  UsingThermal,
+  UsingRidge,
+  UsingWave,
+  BoostClimb,
+  AltitudeLimiting,
+  JustGliding,
+  RateControl, // not actually a nav state
+  PassThruControl, // not actually a nav state
+  HorizonControl,
+  WPAltFail,
+  WPProximityFail,
+  NavStateUndefined
+};
+
+char navNames[NavStateUndefined + 1][5] = //
+{ "HOLD", "RTH ", "HOME", "DESC", "TCHD", "TRAN", "LOIT", //
+  "ORBT", " PRCH", "TOFF", "PIC ", "ACQA", "THRM", "RDG ", //
+  "WAVE", "BST ", "LIMA", "GLID", "RATE", "PASS", "HORZ", //
+  "WPAF", "WPPF", "    "
+};
 
 enum {
   // Data IDs  (BP = before decimal point; AP = after decimal point)
@@ -113,6 +171,8 @@ uint8_t FrSkyUserchLow, ch;
 uint8_t chPacket[4];
 
 bool GPSValid, OriginValid, Armed;
+
+uint32_t  TelemetryTimoutmS;
 
 int16_t computemAHUsed(int16_t Current) {
   if (digitalRead(ZeroPin) == LOW)
@@ -215,6 +275,26 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
             oled.displayChar6x8(1, 14, ' ');
           break;
         case ID_TEMP1: // flight mode
+#if defined(USE_UAVX_DJT)
+
+          // if (F.HoldingAlt)         r |= 0b000010000000000;
+          // if (F.RapidDescentHazard)   r |= 0b000100000000000;
+          // if (F.LowBatt)        r |= 0b001000000000000;
+          // if (Armed())        r |= 0b0100000000000000;
+
+          Temp = (uint16_t)ch << 8 | FrSkyUserchLow;
+          oled.displayString6x8(1, 15, "      ", false);
+          if ((Temp & 0b001000000000000) != 0)
+            oled.displayString6x8(1, 15, "VOLTS", false);
+          else if ((Temp & 0b000100000000000) != 0)
+            oled.displayString6x8(1, 15, "VRS", false);
+          else
+            if ( (Temp & 0x001f) == InFlight)
+              oled.displayString6x8(1, 15, navNames[constrain((Temp >> 5) & 0x001f, 0, UnknownFlightState)], false);
+            else
+              oled.displayString6x8(1, 15,  modeNames[constrain(Temp & 0x001f, 0, NavStateUndefined)], false);
+
+#else
           oled.displayString6x8(1, 15, "    ", false);
           Temp = (uint16_t)ch << 8 | FrSkyUserchLow;
           if (((Temp / 10) % 10) >= 4)
@@ -231,7 +311,7 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
             oled.displayString6x8(1, 15, "RTH ", false);
           else if (Temp2 == 2)
             oled.displayString6x8(1, 15, "NAV ", false);
-
+#endif
           break;
         case ID_TEMP2: // gps flags
           Temp = (uint16_t)ch << 8 | FrSkyUserchLow;
@@ -306,7 +386,7 @@ void updateDisplay(uint8_t Scroll, uint8_t ch) {
           oled.displayReal32(4, 6, make16(ch, FrSkyUserchLow), 0, 'm');
           break;
         case ID_WHERE_HINT: // which to turn to come home intended for voice guidance
-          oled.displayString6x8(4, 12, "hint      ", false);
+          oled.displayString6x8(4, 11, "hint      ", false);
           oled.displayReal32(4, 16, make16(ch, FrSkyUserchLow), 0, 'd');
           break;
         case ID_WHERE_ELEV: // elevation (deg) of the aircraft above the horizon
@@ -556,9 +636,12 @@ void setup(void) {
 
   Serial.begin(9600);
 
+  TelemetryTimoutmS = millis() + 10000;
+
 }
 
 void loop(void) {
+
   uint8_t ch;
 
   if (Serial.available())
