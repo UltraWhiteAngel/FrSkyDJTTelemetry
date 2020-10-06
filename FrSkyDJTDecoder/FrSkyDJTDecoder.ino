@@ -42,7 +42,7 @@ enum FlightStates {
 };
 
 char  modeNames[UnknownFlightState + 1][5] = //
-{ "STRT", "WARM", "LNDG", "LAND", "SHUT", "FLY ", "IR  ",//
+{ "STRT", "WARM", "LNDG", "DOWN", "SHUT", "FLY ", "IR  ",//
   "PRE ", "RDY ", "THR ", "GYRO", "MON ", "GPS ", "    "
 };
 
@@ -76,8 +76,7 @@ enum NavStates {
 char navNames[NavStateUndefined + 1][5] = //
 { "HOLD", "RTH ", "HOME", "DESC", "TCHD", "TRAN", "LOIT", //
   "ORBT", " PRCH", "TOFF", "PIC ", "ACQA", "THRM", "RDG ", //
-  "WAVE", "BST ", "LIMA", "GLID", "RATE", "PASS", "HORZ", //
-  "WPAF", "WPPF", "    "
+  "WAVE", "BST ", "LIMA", "GLID", "ALTF", "PRXF", "    "
 };
 
 enum {
